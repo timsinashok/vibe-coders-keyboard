@@ -5,7 +5,7 @@ use clap::Parser;
 use nom::{IResult, branch::alt, bytes::complete::tag, character::complete::alpha1, combinator::{map, map_res, value}, sequence::preceded};
 use strum_macros::EnumString;
 
-use crate::{keyboard::{Accord, MouseEvent}, parse::from_str};
+use crate::{keyboard::{Accord, MouseEvent, KeyboardEvent, MacroOptions}, parse::from_str};
 
 use super::{Key, Keyboard, Macro, MouseAction, send_message};
 
@@ -128,7 +128,7 @@ impl Keyboard for Keyboard884x {
         ];
 
         match expansion {
-            Macro::Keyboard(presses) => {
+            Macro::Keyboard(KeyboardEvent(_, presses)) => {
                 ensure!(presses.len() <= 18, "macro sequence is too long");
 
                 // Allow single key modifier to be used in combo with other key(s)
@@ -162,6 +162,23 @@ impl Keyboard for Keyboard884x {
         };
 
         send_message(output, &msg);
+
+        if let Macro::Keyboard(KeyboardEvent(MacroOptions { delay, .. }, _)) = expansion {
+            if *delay != 0 {
+                ensure!(*delay <= 6000, "maximum supported delay is 6000ms");
+
+                let [low, high] = delay.to_le_bytes();
+                send_message(output, &[
+                    0x03,
+                    0xfe,
+                    self.to_key_id(key)?,
+                    layer + 1,
+                    5,
+                    low,
+                    high,
+                ]);
+            }
+        }
 
         // Finish key binding
         send_message(output, &[0x03, 0xaa, 0xaa, 0, 0, 0, 0, 0, 0]);
@@ -225,7 +242,10 @@ impl Keyboard884x {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keyboard::{Key, KnobAction, Macro, Modifier, MouseAction, MouseButton, MouseEvent, WellKnownCode, assert_messages};
+    use crate::keyboard::{
+        Key, KnobAction, Macro, Modifier, Modifiers, MouseAction,
+        MouseButton, MouseEvent, WellKnownCode, MacroOptions, assert_messages,
+    };
     use enumset::EnumSet;
 
     #[test]
@@ -234,7 +254,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Test simple key press (Ctrl + A key)
-        let a_key = Macro::Keyboard(vec![Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into()))]);
+        let a_key = Macro::Keyboard(KeyboardEvent(MacroOptions::default(), vec![Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into()))]));
         keyboard.bind_key(0, Key::Button(0), &a_key, &mut output).unwrap();
 
         assert_messages(&output, &[
@@ -454,5 +474,87 @@ mod tests {
         assert_eq!(LedMode::Shock(LedColor::Red).code(), 0x12);
         assert_eq!(LedMode::Shock2(LedColor::Green).code(), 0x43);
         assert_eq!(LedMode::Press(LedColor::Purple).code(), 0x74);
+    }
+
+    #[test]
+    fn test_keyboard_macro_with_delay() {
+        let keyboard = Keyboard884x::new(12, 3).unwrap();
+        let mut output = Vec::new();
+
+        let macro_with_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 1000 },
+            vec![Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into()))]
+        ));
+        keyboard.bind_key(0, Key::Button(0), &macro_with_delay, &mut output).unwrap();
+
+        assert_messages(&output, &[
+            &[
+                0x03, 0xfe, 0x01, 0x01, 0x01,
+                0x00, 0x00, 0x00, 0x00, 0x00,
+                0x01, 0x01, 0x04,
+            ],
+            &[
+                0x03, 0xfe, 0x01, 0x01, 0x05,
+                0xe8, 0x03, // 1000ms in little-endian (0x03e8)
+            ],
+            &[0x03, 0xaa, 0xaa],
+            &[0x03, 0xfd, 0xfe, 0xff],
+            &[0x03, 0xaa, 0xaa],
+        ]);
+    }
+
+    #[test]
+    fn test_keyboard_macro_with_max_delay() {
+        let keyboard = Keyboard884x::new(12, 3).unwrap();
+        let mut output = Vec::new();
+
+        let macro_with_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 5999 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ));
+        keyboard.bind_key(0, Key::Button(0), &macro_with_delay, &mut output).unwrap();
+
+        assert_messages(&output, &[
+            &[
+                0x03, 0xfe, 0x01, 0x01, 0x01,
+                0x00, 0x00, 0x00, 0x00, 0x00,
+                0x01, 0x00, 0x04,
+            ],
+            &[
+                0x03, 0xfe, 0x01, 0x01, 0x05,
+                0x6f, 0x17, // 5999ms in little-endian (0x176f)
+            ],
+            &[0x03, 0xaa, 0xaa],
+            &[0x03, 0xfd, 0xfe, 0xff],
+            &[0x03, 0xaa, 0xaa],
+        ]);
+    }
+
+    #[test]
+    #[should_panic(expected = "maximum supported delay is 6000ms")]
+    fn test_keyboard_macro_delay_exceeds_maximum() {
+        let keyboard = Keyboard884x::new(12, 3).unwrap();
+        let mut output = Vec::new();
+
+        let macro_with_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 6001 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ));
+        keyboard.bind_key(0, Key::Button(0), &macro_with_delay, &mut output).unwrap();
+    }
+
+    #[test]
+    fn test_keyboard_macro_with_zero_delay_no_extra_message() {
+        let keyboard = Keyboard884x::new(12, 3).unwrap();
+        let mut output = Vec::new();
+
+        let macro_no_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 0 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ));
+        keyboard.bind_key(0, Key::Button(0), &macro_no_delay, &mut output).unwrap();
+
+        // Should only have 4 messages (no delay message)
+        assert_eq!(output.len(), 4 * 64);
     }
 }

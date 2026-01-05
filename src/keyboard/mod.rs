@@ -361,9 +361,17 @@ impl Display for MouseEvent {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MacroOptions {
+    pub delay: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyboardEvent(pub MacroOptions, pub Vec<Accord>);
+
 #[derive(Debug, Clone, PartialEq, Eq, DeserializeFromStr)]
 pub enum Macro {
-    Keyboard(Vec<Accord>),
+    Keyboard(KeyboardEvent),
     #[allow(unused)]
     Media(MediaCode),
     #[allow(unused)]
@@ -391,8 +399,12 @@ impl FromStr for Macro {
 impl Display for Macro {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Macro::Keyboard(accords) => {
-                write!(f, "{}", accords.iter().format(","))
+            Macro::Keyboard(KeyboardEvent(opts, accords)) => {
+                if opts.delay != 0 {
+                    write!(f, "{{delay({})}}", opts.delay)?;
+                }
+                write!(f, "{}", accords.iter().format(","))?;
+                Ok(())
             }
             Macro::Media(code) => {
                 write!(f, "{}", code)
@@ -421,5 +433,49 @@ fn assert_messages(actual: &[u8], expected: &[&[u8]]) {
         // Discard trailing zeroes for brevity.
         assert_eq!(discard_trailing_zeroes(actual_msg), discard_trailing_zeroes(expected_msg),
             "message #{}", i);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_macro_with_delay() {
+        let macro_with_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 250 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ));
+        assert_eq!(macro_with_delay.to_string(), "{delay(250)}a");
+    }
+
+    #[test]
+    fn display_macro_without_delay() {
+        let macro_no_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions::default(),
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ));
+        assert_eq!(macro_no_delay.to_string(), "a");
+    }
+
+    #[test]
+    fn display_macro_with_delay_multiple_keys() {
+        let macro_with_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 500 },
+            vec![
+                Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into())),
+                Accord::new(Modifiers::empty(), Some(WellKnownCode::B.into())),
+            ]
+        ));
+        assert_eq!(macro_with_delay.to_string(), "{delay(500)}ctrl-a,b");
+    }
+
+    #[test]
+    fn display_macro_with_zero_delay() {
+        let macro_zero_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 0 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ));
+        assert_eq!(macro_zero_delay.to_string(), "a");
     }
 }

@@ -6,10 +6,10 @@
 //! or as parameters for functions mentioned above.
 
 use nom::{
-    IResult, InputLength, Parser, branch::alt, bytes::complete::tag, character::complete::{alpha1, alphanumeric1, char, digit1}, combinator::{all_consuming, cut, map, map_res, opt, recognize, value}, error::ParseError, multi::{fold_many0, separated_list1}, sequence::{delimited, pair, separated_pair, terminated, tuple}
+    IResult, InputLength, Parser, branch::alt, bytes::complete::tag, character::complete::{alpha1, alphanumeric1, char, digit1}, combinator::{all_consuming, cut, map, map_res, opt, recognize, value}, error::ParseError, multi::{fold_many0, separated_list0, separated_list1}, sequence::{delimited, pair, separated_pair, terminated, tuple}
 };
 
-use crate::keyboard::{Accord, Code, Macro, MediaCode, Modifier, Modifiers, MouseAction, MouseButton, MouseButtons, MouseEvent, MouseModifier, WellKnownCode};
+use crate::keyboard::{Accord, Code, Macro, MediaCode, Modifier, Modifiers, MouseAction, MouseButton, MouseButtons, MouseEvent, MouseModifier, WellKnownCode, KeyboardEvent, MacroOptions};
 
 use std::str::FromStr;
 
@@ -134,11 +134,41 @@ fn mouse_event(s: &str) -> IResult<&str, MouseEvent> {
     event(s)
 }
 
+fn macro_options(s: &str) -> IResult<&str, MacroOptions> {
+    let mut parser = delimited(tag("{"),
+        separated_list0(tag(","), alt((
+            map(
+                delimited(tag("delay("), map_res(digit1, str::parse), tag(")")),
+                |delay| move |opts: &mut MacroOptions| { opts.delay = delay }
+            ),
+        ))),
+    tag("}"));
+    let (rest, mutators) = parser(s)?;
+
+    let mut opts = MacroOptions::default();
+    for m in mutators {
+        m(&mut opts);
+    }
+
+    Ok((rest, opts))
+}
+
+fn keyboard_event(s: &str) -> IResult<&str, KeyboardEvent> {
+    let mut parser = map(
+        pair(
+            opt(macro_options),
+            separated_list1(char(','), accord)
+        ),
+        |(opts, accords)| KeyboardEvent(opts.unwrap_or_default(), accords)
+    );
+    parser(s)
+}
+
 pub fn r#macro(s: &str) -> IResult<&str, Macro> {
     let mut parser = alt((
         map(mouse_event, Macro::Mouse),
         map(media_code, Macro::Media),
-        map(separated_list1(char(','), accord), Macro::Keyboard),
+        map(keyboard_event, Macro::Keyboard),
     ));
     parser(s)
 }
@@ -175,7 +205,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::keyboard::{Accord, Code, Macro, MediaCode, Modifier, Modifiers, MouseAction, MouseButton, MouseEvent, MouseModifier, WellKnownCode};
+    use crate::keyboard::{
+        Accord, Code, Macro, MediaCode, Modifier, Modifiers, MouseAction, MouseButton, MouseEvent, MouseModifier, WellKnownCode,
+        KeyboardEvent, MacroOptions,
+    };
 
     #[test]
     fn parse_custom_code() {
@@ -198,14 +231,14 @@ mod tests {
 
     #[test]
     fn parse_macro() {
-        assert_eq!("A,B".parse(), Ok(Macro::Keyboard(vec![
+        assert_eq!("A,B".parse(), Ok(Macro::Keyboard(KeyboardEvent(MacroOptions::default(), vec![
             Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into())),
             Accord::new(Modifiers::empty(), Some(WellKnownCode::B.into())),
-        ])));
-        assert_eq!("ctrl-A,alt-backspace".parse(), Ok(Macro::Keyboard(vec![
+        ]))));
+        assert_eq!("ctrl-A,alt-backspace".parse(), Ok(Macro::Keyboard(KeyboardEvent(MacroOptions::default(), vec![
             Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into())),
             Accord::new(Modifier::Alt, Some(WellKnownCode::Backspace.into())),
-        ])));
+        ]))));
         assert_eq!("click".parse(), Ok(Macro::Mouse(
             MouseEvent(MouseAction::Click(MouseButton::Left.into()), None)
         )));
@@ -283,5 +316,47 @@ mod tests {
         assert_eq!("ctrl-wheel(3)".parse(), Ok(Macro::Mouse(
             MouseEvent(MouseAction::Wheel(3), Some(MouseModifier::Ctrl))
         )));
+    }
+
+    #[test]
+    fn parse_macro_with_delay() {
+        assert_eq!("{delay(100)}A".parse(), Ok(Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 100 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ))));
+    }
+
+    #[test]
+    fn parse_macro_with_delay_multiple_keys() {
+        assert_eq!("{delay(500)}ctrl-A,B".parse(), Ok(Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 500 },
+            vec![
+                Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into())),
+                Accord::new(Modifiers::empty(), Some(WellKnownCode::B.into())),
+            ]
+        ))));
+    }
+
+    #[test]
+    fn parse_macro_with_zero_delay() {
+        assert_eq!("{delay(0)}A".parse(), Ok(Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 0 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ))));
+    }
+
+    #[test]
+    fn parse_macro_with_large_delay() {
+        assert_eq!("{delay(65535)}A".parse(), Ok(Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 65535 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ))));
+    }
+
+    #[test]
+    fn parse_macro_delay_invalid_syntax() {
+        assert!("{delay}A".parse::<Macro>().is_err());
+        assert!("{delay()}A".parse::<Macro>().is_err());
+        assert!("{delay(abc)}A".parse::<Macro>().is_err());
     }
 }

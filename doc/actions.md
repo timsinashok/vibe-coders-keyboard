@@ -8,8 +8,9 @@ This document describes all available actions that can be assigned to keys and k
 - [Keyboard Actions](#keyboard-actions)
   - [Simple Keys](#simple-keys)
   - [Key Combinations](#key-combinations)
-  - [Key Sequences](#key-sequences)
   - [Modifiers](#modifiers)
+  - [Key Sequences](#key-sequences)
+  - [Options](#options)
 - [Mouse Actions](#mouse-actions)
   - [Mouse Click](#mouse-click)
   - [Mouse Move](#mouse-move)
@@ -97,6 +98,12 @@ Execute multiple key presses in sequence by separating them with commas (`,`):
 Up to five combinations may be used.
 
 **Note for 3x1 keyboards**: Key modifiers are only supported for the first key in a sequence. You can use `ctrl-alt-del,1,2` but not `ctrl-alt-del,alt-1,2`.
+
+### Options
+
+Keyboard sequence may be preceeded by options in curly brackets, like this: `{delay=100}left,a,right`.
+Currently, the only supported options is *delay(<number>)*, which inserts delays (specified in milliseconds)
+between all accords in sequence.
 
 ## Mouse Actions
 

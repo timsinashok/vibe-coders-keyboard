@@ -1,7 +1,7 @@
 use anyhow::{bail, ensure, Result};
 use serde::Deserialize;
 
-use crate::keyboard::Macro;
+use crate::keyboard::{Macro, KeyboardEvent};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -36,7 +36,7 @@ impl Config {
             if is_limited {
                 let macro_with_modifiers_beside_first_key = buttons.iter().flatten().find(|macro_| {
                     match macro_ {
-                        Macro::Keyboard(accords) => accords.iter().skip(1).any(|accord| !accord.modifiers.is_empty()),
+                        Macro::Keyboard(KeyboardEvent(_, accords)) => accords.iter().skip(1).any(|accord| !accord.modifiers.is_empty()),
                         _ => false,
                     }
                 });

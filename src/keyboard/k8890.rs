@@ -2,7 +2,7 @@ use anyhow::{ensure, Result};
 use clap::Parser;
 
 use crate::keyboard::MouseEvent;
-use super::{Key, Keyboard, Macro, MouseAction, send_message};
+use super::{Key, Keyboard, Macro, MouseAction, KeyboardEvent, send_message};
 
 pub struct Keyboard8890;
 
@@ -20,8 +20,10 @@ impl Keyboard for Keyboard8890 {
         send_message(output, &[0x03, 0xfe, layer+1, 0x1, 0x1, 0, 0, 0, 0]);
 
         match expansion {
-            Macro::Keyboard(presses) => {
+            Macro::Keyboard(KeyboardEvent(opts, presses)) => {
+                ensure!(opts.delay == 0, "delay feature is not supported by this keyboard model");
                 ensure!(presses.len() <= 5, "macro sequence is too long");
+
                 // For whatever reason empty key is added before others.
                 let iter = presses.iter().map(|accord| (accord.modifiers.as_u8(), accord.code.map_or(0, |c| c.value())));
                 let (len, items) = (presses.len() as u8, Box::new(std::iter::once((0, 0)).chain(iter)));
@@ -96,7 +98,10 @@ impl Keyboard8890 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keyboard::{Accord, Key, Macro, Modifier, MouseAction, MouseButton, MouseEvent, WellKnownCode, assert_messages};
+    use crate::keyboard::{
+        Accord, Key, Macro, Modifier, Modifiers, MouseAction, MouseButton, MouseEvent,
+        WellKnownCode, MacroOptions, assert_messages,
+    };
     use enumset::EnumSet;
 
     #[test]
@@ -105,7 +110,7 @@ mod tests {
         let mut output = Vec::new();
 
         // Test simple key press (Ctrl + A key)
-        let a_key = Macro::Keyboard(vec![Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into()))]);
+        let a_key = Macro::Keyboard(KeyboardEvent(MacroOptions::default(), vec![Accord::new(Modifier::Ctrl, Some(WellKnownCode::A.into()))]));
         keyboard.bind_key(0, Key::Button(0), &a_key, &mut output).unwrap();
 
         assert_messages(&output, &[
@@ -198,5 +203,18 @@ mod tests {
             &[0x03, 0x06, 0x13, 0x01, 0x05, 0x0a, 0x00, 0x00], // mouse drag (buttons=1, dx=5, dy=10)
             &[0x03, 0xaa, 0xaa], // binding finish
         ]);
+    }
+
+    #[test]
+    #[should_panic(expected = "delay feature is not supported by this keyboard model")]
+    fn test_keyboard_macro_with_delay_not_supported() {
+        let keyboard = Keyboard8890::new();
+        let mut output = Vec::new();
+
+        let macro_with_delay = Macro::Keyboard(KeyboardEvent(
+            MacroOptions { delay: 100 },
+            vec![Accord::new(Modifiers::empty(), Some(WellKnownCode::A.into()))]
+        ));
+        keyboard.bind_key(0, Key::Button(0), &macro_with_delay, &mut output).unwrap();
     }
 }
