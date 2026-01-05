@@ -236,7 +236,7 @@ fn create_driver(id_product: u16, buttons: u8, knobs: u8) -> Result<Box<dyn Keyb
         0x8890 => {
             Box::new(k8890::Keyboard8890::new())
         }
-        _ => unreachable!("unsupported device"),
+        _ => bail!("unsupported device"),
     };
     Ok(keyboard)
 }
