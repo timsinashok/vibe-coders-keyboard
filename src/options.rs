@@ -60,6 +60,10 @@ pub enum Command {
 
     /// Select LED backlight mode
     Led(LedCommand),
+
+    /// Test LED mode specification without device initialization (hidden command)
+    #[command(hide = true)]
+    TestLed(TestLedCommand),
 }
 
 #[derive(Parser)]
@@ -71,6 +75,13 @@ pub struct ConfigParams {
 
 #[derive(Parser)]
 pub struct LedCommand {
+    #[arg(num_args=0.., allow_hyphen_values=true)]
+    pub args: Vec<String>,
+}
+
+#[derive(Parser)]
+pub struct TestLedCommand {
+    /// LED command arguments (layer and mode)
     #[arg(num_args=0.., allow_hyphen_values=true)]
     pub args: Vec<String>,
 }

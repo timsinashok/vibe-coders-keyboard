@@ -12,10 +12,10 @@ use crate::keyboard::{
     k884x, k8890, Keyboard, KnobAction, MediaCode, Modifier,
     WellKnownCode,
 };
-use crate::options::{Command, LedCommand};
+use crate::options::{Command, LedCommand, TestLedCommand};
 use crate::{keyboard::Key, options::Options};
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{Result, anyhow, bail, ensure};
 use indoc::indoc;
 use itertools::Itertools;
 use log::debug;
@@ -115,6 +115,21 @@ fn main() -> Result<()> {
             args.insert(0, "led".to_string());
             keyboard.set_led(&args, &mut output)?;
             send_to_device(&handle, endpoint, &output)?;
+        }
+
+        Command::TestLed(TestLedCommand { mut args }) => {
+            let product_id = options.devel_options.product_id
+                .ok_or_else(|| anyhow!("test-led command requires --product-id to be specified"))?;
+
+            // Create driver without USB device initialization
+            let mut keyboard = create_driver(product_id, 0, 0)?;
+            let mut output = Vec::new();
+
+            // Validate LED arguments
+            args.insert(0, "test-led".to_string());
+            keyboard.set_led(&args, &mut output)?;
+
+            println!("Generated {} bytes of data", output.len());
         }
     }
 
