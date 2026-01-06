@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.7.0
+
 ## 1.6.2
 
 - Fix 'led' command for 844x
