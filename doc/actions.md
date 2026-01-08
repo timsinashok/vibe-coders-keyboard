@@ -101,8 +101,8 @@ Up to five combinations may be used.
 
 ### Options
 
-Keyboard sequence may be preceeded by options in curly brackets, like this: `{delay=100}left,a,right`.
-Currently, the only supported options is *delay(<number>)*, which inserts delays (specified in milliseconds)
+Keyboard sequence may be preceeded by options in curly brackets, like this: `{delay(100)}left,a,right`.
+Currently, the only supported options is `delay(<number>)`, which inserts delays (specified in milliseconds)
 between all accords in sequence.
 
 ## Mouse Actions
