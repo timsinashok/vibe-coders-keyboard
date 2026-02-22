@@ -1,0 +1,16 @@
+orientation: normal
+
+rows: 3
+columns: 1
+knobs: 1
+
+layers:
+  - buttons:
+      - ["ctrl-opt-r"]
+      - ["cmd-z"]
+      - ["cmd-space"]
+    knobs:
+      - ccw: "left"
+        press: "enter"
+        cw: "right"
+
